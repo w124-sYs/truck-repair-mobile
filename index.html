@@ -106,6 +106,25 @@
   .chk{width:18px; height:18px; accent-color:var(--primary);}
   .summary-row{background:#f0f7ff !important; font-weight:700;}
   .divider{height:1px; background:var(--border); margin:12px 0;}
+
+/* ===== 登录锁 ===== */
+#loginLock{position:fixed; inset:0; z-index:99999; background:linear-gradient(135deg,#1e6fd9,#3b82f6); display:flex; align-items:center; justify-content:center; padding:20px;}
+#loginLock.hide{display:none;}
+#loginBox{background:#fff; border-radius:16px; padding:28px 24px; width:100%; max-width:340px; box-shadow:0 20px 50px rgba(0,0,0,.25); text-align:center;}
+#loginBox .lg-ico{font-size:44px; line-height:1; margin-bottom:10px;}
+#loginBox h2{font-size:19px; color:#2b3440; margin-bottom:4px;}
+#loginBox .lg-sub{font-size:12px; color:#7a8699; margin-bottom:20px;}
+#loginBox .lg-field{text-align:left; margin-bottom:14px;}
+#loginBox .lg-field label{display:block; font-size:12px; color:#7a8699; font-weight:600; margin-bottom:6px;}
+#loginBox input{width:100%; height:44px; padding:0 12px; border:1px solid #e2e6ec; border-radius:10px; font-size:16px; outline:none; transition:.2s; background:#f9fafb;}
+#loginBox input:focus{border-color:#1e6fd9; box-shadow:0 0 0 3px rgba(30,111,217,.12); background:#fff;}
+#loginBox .lg-btn{width:100%; height:46px; border:none; border-radius:10px; background:#1e6fd9; color:#fff; font-size:16px; font-weight:700; cursor:pointer; margin-top:6px; transition:.2s;}
+#loginBox .lg-btn:hover{background:#1557b0;}
+#loginBox .lg-btn:active{transform:scale(.98);}
+#loginBox .lg-err{color:#dc2626; font-size:13px; min-height:18px; margin-top:10px; font-weight:600;}
+#loginBox .lg-tip{font-size:11px; color:#a0aab8; margin-top:14px;}
+body.locked{overflow:hidden;}
+
 </style>
 </head>
 <body>
@@ -1696,37 +1715,6 @@ function exportAll(){
   toast('✅ 已导出 Excel');
 }
 
-// ===== 恢复数据（从 JSON 备份文件导入）=====
-function restore(e){
-  const file = e.target.files[0];
-  if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(){
-    try{
-      const data = JSON.parse(reader.result);
-      if(!data || (data.repairs==null && data.purchases==null)){ toast('❌ 文件格式不正确'); e.target.value=''; return; }
-      const cnt = o=>(o||[]).length;
-      const ok = confirm(`⚠️ 即将用导入的数据覆盖当前数据!\n\n修理 ${cnt(state.repairs)} → ${cnt(data.repairs)}\n采购 ${cnt(state.purchases)} → ${cnt(data.purchases)}\n出库 ${cnt(state.sales)} → ${cnt(data.sales)}\n库存 ${cnt(state.inventory)} → ${cnt(data.inventory)}\n车辆 ${cnt(state.vehicles)} → ${cnt(data.vehicles)}\n开支 ${cnt(state.expenses)} → ${cnt(data.expenses)}\n\n点「确定」覆盖,点「取消」放弃导入。`);
-      if(!ok){ e.target.value=''; return; }
-      if(!data.inventory) data.inventory = [];
-      if(!data.expenses) data.expenses = [];
-      if(!data.sales) data.sales = [];
-      if(!data.vehicles) data.vehicles = [];
-      if(!data.logs) data.logs = [];
-      if(!data.settlements) data.settlements = [];
-      if(!data.deletedParts) data.deletedParts = [];
-      if(!data.repairRate && data.repairRate!==0) data.repairRate = 50;
-      if(!data.weldRate && data.weldRate!==0) data.weldRate = 50;
-      if(data.purchases) data.purchases.forEach(p=>{ if(!p.type) p.type = '采购'; });
-      state = data;
-      saveData(); renderRepair(); renderPurchase(); renderInventory(); renderVehicle(); renderFinance();
-      toast('✅ 数据已恢复');
-    }catch(err){ toast('❌ 文件解析失败'); }
-  };
-  reader.readAsText(file);
-  e.target.value = '';
-}
-
 // ===== 初始化 =====
 function init(){
   loadData();
@@ -1742,6 +1730,75 @@ function init(){
   renderFinance();
 }
 init();
+</script>
+
+<script>
+/* ===== 登录锁逻辑 ===== */
+(function(){
+  var ACC = '999999';
+  var PWD = '888888';
+  var KEY = 'truckRepairLoginOK';
+
+  function buildLock(){
+    if(document.getElementById('loginLock')) return;
+    var d = document.createElement('div');
+    d.id = 'loginLock';
+    d.innerHTML =
+      '<div id="loginBox">' +
+        '<div class="lg-ico">🚚</div>' +
+        '<h2>货车修理厂统计系统</h2>' +
+        '<div class="lg-sub">请登录后使用</div>' +
+        '<div class="lg-field"><label>账号</label><input id="lgAcc" type="text" inputmode="numeric" autocomplete="username" placeholder="请输入账号"></div>' +
+        '<div class="lg-field"><label>密码</label><input id="lgPwd" type="password" autocomplete="current-password" placeholder="请输入密码"></div>' +
+        '<button class="lg-btn" id="lgBtn">登 录</button>' +
+        '<div class="lg-err" id="lgErr"></div>' +
+        '<div class="lg-tip">本系统数据保存在本机浏览器中</div>' +
+      '</div>';
+    document.body.appendChild(d);
+    document.body.classList.add('locked');
+
+    var accEl = document.getElementById('lgAcc');
+    var pwdEl = document.getElementById('lgPwd');
+    var errEl = document.getElementById('lgErr');
+
+    function doLogin(){
+      var a = (accEl.value || '').trim();
+      var p = (pwdEl.value || '').trim();
+      if(a === ACC && p === PWD){
+        try{ sessionStorage.setItem(KEY, '1'); }catch(e){}
+        d.classList.add('hide');
+        document.body.classList.remove('locked');
+        errEl.textContent = '';
+        setTimeout(function(){ try{ window.dispatchEvent(new Event('resize')); }catch(e){} }, 50);
+      } else {
+        errEl.textContent = '❌ 账号或密码错误';
+        pwdEl.value = '';
+        pwdEl.focus();
+      }
+    }
+
+    document.getElementById('lgBtn').addEventListener('click', doLogin);
+    accEl.addEventListener('keydown', function(e){ if(e.key === 'Enter') pwdEl.focus(); });
+    pwdEl.addEventListener('keydown', function(e){ if(e.key === 'Enter') doLogin(); });
+    setTimeout(function(){ accEl.focus(); }, 100);
+  }
+
+  function alreadyOK(){
+    try{ return sessionStorage.getItem(KEY) === '1'; }catch(e){ return false; }
+  }
+
+  function start(){
+    if(alreadyOK()) return;
+    buildLock();
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+
 </script>
 </body>
 </html>
